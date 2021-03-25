@@ -13,14 +13,16 @@ def tmpNames():
 
 fresh = (lambda g : lambda n : "__" + n + "_" + g.__next__())(tmpNames())
 
-BOOLNEG = {
+DATA_START = 1024
+
+BOOL_NEG = {
     "leq": "ge",
     "geq": "le",
     "eq": "neq",
     "neq": "eq"
 }
 
-BOOLOPS = ["and","or","not","le","ge","leq","geq","eq","ne"]
+BOOL_OPS = ["and","or","not","le","ge","leq","geq","eq","ne"]
 
 def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[Stmt],Val]:
     match exp:
@@ -67,9 +69,9 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                 case "not":
                     match a[0]:
                         case Op(args=a,op=op):
-                            if op in BOOLNEG:
-                                return flattenCondJmp(Op(a,BOOLNEG[op]),lbl,renames)
-                            elif op in BOOLOPS:
+                            if op in BOOL_NEG:
+                                return flattenCondJmp(Op(a,BOOL_NEG[op]),lbl,renames)
+                            elif op in BOOL_OPS:
                                 avoided = fresh("not")
                                 n_cse = flattenCondJmp(Op(a,op),avoided,renames)
                                 return n_cse + [GotoCOnd(lbl,""),Label(avoided)]
@@ -89,8 +91,14 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
         case exp:
             return flattenCondJmp(Op([exp,IntLit(0)],"neq"),lbl,renames)
 
-def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
+def flattenStmt(stmt: Stmt, renames: VarNames, data: int) -> tuple[list[Stmt],int]:
     match stmt:
+        case Allocate(arr,addr):
+            stmts, data = flattenStmt(Assignment(addr,IntLit(data)),renames,data+len(arr))
+            for i,e in enumerate(arr):
+                stmts_, data = flattenStmt(Assignment(Index(addr,IntLit(i)),e),renames,data)
+                stmts.extend(stmts_)
+            return (stmts,data)
         case Assignment(Index(a,o),e):
             stmts = []
             idx = None
@@ -125,37 +133,38 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                     ev = fresh("tmp")
                     stmts.append(Assignment(Var(ev),e_))
             stmts.append(Assignment(idx,Var(ev)))
-            return stmts
+            return (stmts,data)
         case Assignment(Var(v),e):
             if v not in renames:
                 renames[v] = fresh("user_" + v)
             stmts, v_ = flattenExp(e,renames,outvar=renames[v])
-            return stmts
+            return (stmts,data)
         case While(stmts=stmts,cond=cond):
             loop_start = fresh("loop")
             loop_break = fresh("break")
             stmts_ = flattenCondJmp(Op([cond],"not"),loop_break,renames)
-            stmts__ = flattenStmts(stmts,renames.copy())
-            return [Label(loop_start)] + stmts_ + stmts__ + [GotoCond(loop_start,""),Label(loop_break)]
+            stmts__,data = flattenStmts(stmts,renames.copy(),data)
+            return ([Label(loop_start)] + stmts_ + stmts__ + [GotoCond(loop_start,""),Label(loop_break)],data)
         case If(cases=cases):
             branches = [fresh("branch") for _ in cases]
             sel = []
             stmts = []
             for b,(cond,s) in zip(branches,cases):
                 stmts_ = flattenCondJmp(Op([cond],"not"),b,renames)
-                stmts__ = flattenStmts(s,renames.copy())
+                stmts__,data = flattenStmts(s,renames.copy(),data)
                 stmts.extend(stmts_ + stmts__ + [Label(b)])
-            return stmts
+            return (stmts,data)
         case stmt:
-            return [stmt]
+            return ([stmt],data)
 
-def flattenStmts(stmts: list[Stmt],renames) -> list[Stmt]:
+def flattenStmts(stmts: list[Stmt],renames: VarNames,data: int) -> tuple[list[Stmt],int]:
     stmts_ = []
-    for s in map(lambda s : flattenStmt(s,renames),stmts):
+    for s,d in map(lambda s : flattenStmt(s,renames,data),stmts):
         stmts_.extend(s)
-    return stmts_
+        data = d
+    return (stmts_,data)
 
-def lieftimesExp(e: Exp,i: int,d: dict[str,tuple[int,int]]):
+def lifetimesExp(e: Exp,i: int,d: dict[str,tuple[int,int]]):
     match e:
         case Op(args=a):
             for a in a:
@@ -165,8 +174,8 @@ def lieftimesExp(e: Exp,i: int,d: dict[str,tuple[int,int]]):
         case Var(var=n):
             d[n] = (d[n][0],i)
         case Index(a,o):
-            lieftimesExp(a,i,d)
-            lieftimesExp(o,i,d)
+            lifetimesExp(a,i,d)
+            lifetimesExp(o,i,d)
 
 def lifetimes(stmts: list[Stmt]) -> dict[str,tuple[int,int]]:
     d = {}
@@ -176,7 +185,7 @@ def lifetimes(stmts: list[Stmt]) -> dict[str,tuple[int,int]]:
             case Label(lbl):
                 l[lbl] = i
             case Assignment(assigns=v,assignexp=e):
-                lieftimesExp(e,i,d)
+                lifetimesExp(e,i,d)
                 match v:
                     case Var(var=n):
                         if n not in d:
@@ -185,7 +194,6 @@ def lifetimes(stmts: list[Stmt]) -> dict[str,tuple[int,int]]:
                             d[n] = (d[n][0],i)
                     case v:
                         lifetimesExp(v,i,d)
-            
             case GotoCond(lbl=lbl):
                 if lbl in l:
                     for n,(s,e) in d.items():
@@ -269,7 +277,7 @@ def dispAsm(asm: [Asm]) -> str:
     return out
 
 def compile(prg: list[Stmt]) -> str:
-    flt = flattenStmts(prg,{})
+    flt,data_end = flattenStmts(prg,{},DATA_START)
     lf = lifetimes(flt)
     return dispAsm(generateAsm(flt,greedy(list(lf),interference(lf))))
 
@@ -279,7 +287,8 @@ program = [
     While([
         Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
         Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"neq"))
+    ],Op([Var("x"),IntLit(0)],"neq")),
+    Allocate([IntLit(0),IntLit(1),IntLit(2)],Var("z"))
 ]
 
 print(compile(program))

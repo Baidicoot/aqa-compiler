@@ -43,6 +43,11 @@ class Constant(Stmt):
     assignval: Exp
 
 @dataclasses.dataclass
+class Allocate(Stmt):
+    data: list[Exp]
+    var: Addr
+
+@dataclasses.dataclass
 class While(Stmt):
     stmts: list[Stmt]
     cond: Exp

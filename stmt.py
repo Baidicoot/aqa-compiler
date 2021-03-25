@@ -83,6 +83,18 @@ class IntLit(Val):
     val: int
 
 @dataclasses.dataclass
+class StrLit(Val):
+    val: str
+
+@dataclasses.dataclass
+class FloatLit(Val):
+    val: float
+
+@dataclasses.dataclass
+class ArrayLit(Val):
+    val: float
+
+@dataclasses.dataclass
 class Var(Addr):
     var: str
 

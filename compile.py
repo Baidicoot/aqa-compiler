@@ -323,15 +323,17 @@ def compile(prg: list[Stmt]) -> str:
     flt,data_end = flattenStmts(prg,{},DATA_START)
     lf = lifetimes(flt)
     regs = greedy(list(lf),interference(lf))
-    print(lf, regs)
     return dispAsm(generateAsm(flt,regs))
 
 program = [
-    Assignment(Var("t"),IntLit(0)),
-    For("i",IntLit(0),IntLit(10),[
-        Assignment(Var("t"),Op([Var("t"),Var("i")],"add"))
-    ])
+    Assignment(Var("x"),IntLit(5)),
+    Assignment(Var("y"),IntLit(0)),
+    While([
+        Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
+        Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
+    ],Op([Var("x"),IntLit(0)],"neq"))
 ]
 
 print(shows(program))
+print("\ncompiles to:\n")
 print(compile(program))

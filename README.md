@@ -13,11 +13,11 @@ compiles to:
 ```x86asm
 mov r1, #5
 mov r0, #0
+b __cmp_3
 __loop_2:
-cmp r1, #0
-beq __break_3
 sub r1, r1, #1
 add r0, r0, #2
-b __loop_2
-__break_3:
+__cmp_3:
+cmp r1, #0
+bneq __loop_2
 ```

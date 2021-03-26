@@ -2,8 +2,11 @@ import dataclasses
 import enum
 from typing import *
 
+INDENT = 2
+
 class Stmt:
-    pass
+    def show(self,i: int = 0) -> str:
+        return "ERROR INVALID STATEMENT"
 
 class Exp(Stmt):
     pass
@@ -32,25 +35,40 @@ class Register(enum.Enum):
 def showRegister(r: Register) -> str:
     return "r" + str(r)
 
+def shows(ls, i: int = 0) -> str:
+    return "\n".join(map(lambda x : (" " * i) + x.show(i),ls))
+
 @dataclasses.dataclass
 class Assignment(Stmt):
     assigns: Addr
     assignexp: Exp
+
+    def show(self,_=0):
+        return self.assigns.show() + " <- " + self.assignexp.show()
 
 @dataclasses.dataclass
 class Constant(Stmt):
     assigns: Addr
     assignval: Exp
 
+    def show(self,_=0):
+        return "constant " + self.assigns.show() + " <- " + self.assignval.show()
+
 @dataclasses.dataclass
 class Allocate(Stmt):
     data: list[Exp]
     var: Addr
 
+    def show(self,_=0):
+        return self.var.show() + " <- [" + ", ".join(map(lambda x: x.show(0),self.data)) + "]"
+
 @dataclasses.dataclass
 class While(Stmt):
     stmts: list[Stmt]
     cond: Exp
+
+    def show(self,i=0):
+        return "WHILE " + self.cond.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "END"
 
 @dataclasses.dataclass
 class For(Stmt):
@@ -59,41 +77,68 @@ class For(Stmt):
     end: Exp
     stmts: list[Stmt]
 
+    def show(self,i=0):
+        return "FOR " + self.var + " <- " + self.start.show() + " TO " + self.end.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "END"
+
 @dataclasses.dataclass
 class Repeat(Stmt):
     stmts: list[Stmt]
     cond: Exp
 
+    def show(self,i=0):
+        return "REPEAT\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "UNTIL " + self.cond.show()
+
 @dataclasses.dataclass
 class If(Stmt):
     cases: list[tuple[Exp,list[Stmt]]]
 
+    def show(self,_=0):
+        pass
+
 @dataclasses.dataclass
 class Label(Stmt):
     lbl: str
+
+    def show(self,_=0):
+        return self.lbl + ":"
 
 @dataclasses.dataclass
 class GotoCond(Stmt):
     lbl: str
     cond: str
 
+    def show(self,i=0):
+        return "b" + self.cond + " " + self.lbl
+
 @dataclasses.dataclass
 class Op(Exp):
     args: list[Exp]
     op: str
 
+    def show(self,_=0):
+        return self.op + " " + ", ".join(map(lambda x : x.show(), self.args))
+
 @dataclasses.dataclass
 class IntLit(Val):
     val: int
+
+    def show(self,_=0):
+        return str(self.val)
 
 @dataclasses.dataclass
 class Var(Addr):
     var: str
 
+    def show(self,_=0):
+        return self.var
+
 @dataclasses.dataclass
 class Index(Addr):
     ptr: Addr
     offset: Exp
+
+    def show(self,_=0):
+        return self.ptr.show() + "[" + self.offset.show() + "]"
 
 class Asm:
     def generate(self) -> str:

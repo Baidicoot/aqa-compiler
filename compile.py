@@ -333,4 +333,5 @@ program = [
     ])
 ]
 
+print(shows(program))
 print(compile(program))

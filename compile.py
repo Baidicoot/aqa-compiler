@@ -16,28 +16,50 @@ fresh = (lambda g : lambda n : "__" + n + "_" + g.__next__())(tmpNames())
 DATA_START = 1024
 
 BOOL_NEG = {
-    "leq": "ge",
-    "geq": "le",
+    "leq": "gt",
+    "geq": "lt",
     "eq": "neq",
     "neq": "eq"
 }
 
-BOOL_OPS = ["and","or","not","le","ge","leq","geq","eq","ne"]
+BOOL_OPS = ["and","or","not","lt","gt","leq","geq","eq","ne"]
+
+INT_FOLD_OPS = {
+    "add": lambda x, y : x + y,
+    "sub": lambda x, y : x - y,
+    "mul": lambda x, y : x * y,
+    "div": lambda x, y : x // y,
+    "mod": lambda x, y : x % y,
+}
+
+def constantFold(exp: Exp) -> Exp:
+    match exp:
+        case Op([l,r],("add" | "sub" | "mul" | "div" | "mod")):
+            l_ = constantFold(l)
+            r_ = constantFold(r)
+            match (l_,r_):
+                case (IntLit(lv),IntLit(rv)):
+                    return IntLit(INT_FOLD_OPS[exp.op](lv,rv))
+                case (l__,r__):
+                    return Op([l__,r__], exp.op)
+        case exp:
+            return exp
 
 def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[Stmt],Val]:
+    exp = constantFold(exp)
     match exp:
         case Var(var=v):
             if outvar:
-                return ([Assignment(outvar,Var(renames[v]))],Var(outvar))
+                return ([Assignment(Var(outvar),Var(renames[v]))],Var(outvar))
             return ([],Var(renames[v]))
         case Op(args=a,op=o):
             stmts = []
             vals = []
+            tmp = outvar if outvar else fresh("tmp")
             for a in a:
                 stmt, val = flattenExp(a,renames)
                 stmts.extend(stmt)
                 vals.append(val)
-            tmp = outvar if outvar else fresh("tmp")
             stmts.append(Assignment(Var(tmp),Op(args=vals,op=o)))
             return (stmts,Var(tmp))
         case IntLit():
@@ -69,14 +91,16 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                 case "not":
                     match a[0]:
                         case Op(args=a,op=op):
-                            if op in BOOL_NEG:
+                            if op == "not":
+                                return flattenCondJmp(a[0],lbl,renames)
+                            elif op in BOOL_NEG:
                                 return flattenCondJmp(Op(a,BOOL_NEG[op]),lbl,renames)
                             elif op in BOOL_OPS:
                                 avoided = fresh("not")
                                 n_cse = flattenCondJmp(Op(a,op),avoided,renames)
-                                return n_cse + [GotoCOnd(lbl,""),Label(avoided)]
+                                return n_cse + [GotoCond(lbl,""),Label(avoided)]
                     return flattenCondJmp(Op([a[0],IntLit(0)],"eq"),lbl,renames)
-                case ("le" | "ge" | "eq" | "neq"):
+                case ("lt" | "gt" | "eq" | "neq"):
                     l, r = a
                     stmts_l, lv = flattenExp(l,renames)
                     stmts_r, rv = flattenExp(r,renames)
@@ -85,7 +109,7 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                     l, r = a
                     stmts_l, lv = flattenExp(l,renames)
                     stmts_r, rv = flattenExp(r,renames)
-                    return stmts_l + stmts_r + flattenCondJmp(Op([Op([lv,rv],nop)],"not"),lbl,renames)
+                    return stmts_l + stmts_r + flattenCondJmp(Op([Op([lv,rv],op)],"not"),lbl,renames)
                 case op:
                     return flattenCondJmp(Op([exp,IntLit(0)],"neq"),lbl,renames)
         case exp:
@@ -141,10 +165,27 @@ def flattenStmt(stmt: Stmt, renames: VarNames, data: int) -> tuple[list[Stmt],in
             return (stmts,data)
         case While(stmts=stmts,cond=cond):
             loop_start = fresh("loop")
-            loop_break = fresh("break")
-            stmts_ = flattenCondJmp(Op([cond],"not"),loop_break,renames)
+            loop_cmp = fresh("cmp")
+            stmts_ = flattenCondJmp(cond,loop_start,renames)
             stmts__,data = flattenStmts(stmts,renames.copy(),data)
-            return ([Label(loop_start)] + stmts_ + stmts__ + [GotoCond(loop_start,""),Label(loop_break)],data)
+            return ([GotoCond(loop_cmp,""),Label(loop_start)] + stmts__ + [Label(loop_cmp)] + stmts_,data)
+        case Repeat(stmts=stmts,cond=cond):
+            loop_start = fresh("loop")
+            stmts_ = flattenCondJmp(Op([cond],"not"),loop_start,renames)
+            stmts__,data = flattenStmts(stmts,renames.copy(),data)
+            return ([Label(loop_start)] + stmts__ + stmts_,data)
+        case For(var=iv,start=s,end=e,stmts=stmts):
+            stmts_,e_ = flattenExp(e,renames)
+            match e_:
+                case Var(ev):
+                    renames[ev] = ev
+            stmts__,data = flattenStmt(Assignment(Var(iv),s),renames,data)
+            loop,data = flattenStmt(
+                While(stmts + [Assignment(Var(iv),Op([Var(iv),IntLit(1)],"add"))],
+                    Op([Var(iv),e_],"lt")),
+                renames,
+                data)
+            return (stmts_ + stmts__ + loop,data)
         case If(cases=cases):
             branches = [fresh("branch") for _ in cases]
             sel = []
@@ -199,6 +240,8 @@ def lifetimes(stmts: list[Stmt]) -> dict[str,tuple[int,int]]:
                     for n,(s,e) in d.items():
                         if s <= l[lbl] <= e:
                             d[n] = (s,i)
+            case Exp():
+                lifetimesExp(s,i,d)
     return d
 
 def interference(d: dict[str,tuple[int,int]]) -> dict[str, list[str]]:
@@ -279,16 +322,17 @@ def dispAsm(asm: [Asm]) -> str:
 def compile(prg: list[Stmt]) -> str:
     flt,data_end = flattenStmts(prg,{},DATA_START)
     lf = lifetimes(flt)
-    return dispAsm(generateAsm(flt,greedy(list(lf),interference(lf))))
+    regs = greedy(list(lf),interference(lf))
+    print(lf, regs)
+    return dispAsm(generateAsm(flt,regs))
 
 program = [
-    Assignment(Var("x"),IntLit(5)),
-    Assignment(Var("y"),IntLit(0)),
-    While([
-        Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
-        Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"neq")),
-    Allocate([IntLit(0),IntLit(1),IntLit(2)],Var("z"))
+    Assignment(Var("t"),IntLit(0)),
+    Assignment(Var("i"),IntLit(0)),
+    Repeat([
+        Assignment(Var("t"),Op([Var("t"),Var("i")],"add")),
+        Assignment(Var("i"),Op([Var("i"),IntLit(1)],"add"))
+    ],Op([Var("i"),IntLit(10)],"leq"))
 ]
 
 print(compile(program))

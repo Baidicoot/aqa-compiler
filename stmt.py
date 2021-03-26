@@ -53,6 +53,22 @@ class While(Stmt):
     cond: Exp
 
 @dataclasses.dataclass
+class For(Stmt):
+    var: str
+    start: Exp
+    end: Exp
+    stmts: list[Stmt]
+
+@dataclasses.dataclass
+class Repeat(Stmt):
+    stmts: list[Stmt]
+    cond: Exp
+
+@dataclasses.dataclass
+class If(Stmt):
+    cases: list[tuple[Exp,list[Stmt]]]
+
+@dataclasses.dataclass
 class Label(Stmt):
     lbl: str
 
@@ -64,14 +80,6 @@ class Label(Stmt):
 class GotoCond(Stmt):
     lbl: str
     cond: str
-
-@dataclasses.dataclass
-class If(Stmt):
-    cases: list[tuple[Exp,list[Stmt]]]
-
-@dataclasses.dataclass
-class Break(Stmt):
-    pass
 
 @dataclasses.dataclass
 class Op(Exp):

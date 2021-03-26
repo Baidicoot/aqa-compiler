@@ -73,10 +73,6 @@ class Label(Stmt):
     lbl: str
 
 @dataclasses.dataclass
-class Label(Stmt):
-    label: str
-
-@dataclasses.dataclass
 class GotoCond(Stmt):
     lbl: str
     cond: str

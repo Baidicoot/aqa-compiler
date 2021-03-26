@@ -251,7 +251,7 @@ def interference(d: dict[str,tuple[int,int]]) -> dict[str, list[str]]:
         for v_,(s_,e_) in d.items():
             if v == v_:
                 continue
-            if s <= s_ <= e or s <= e_ <= e or s_ <= s <= e_ or s_ <= e <= e_:
+            if s <= s_ < e or s_ <= s < e_:
                 i[v].append(v_)
     return i
 
@@ -328,11 +328,9 @@ def compile(prg: list[Stmt]) -> str:
 
 program = [
     Assignment(Var("t"),IntLit(0)),
-    Assignment(Var("i"),IntLit(0)),
-    Repeat([
-        Assignment(Var("t"),Op([Var("t"),Var("i")],"add")),
-        Assignment(Var("i"),Op([Var("i"),IntLit(1)],"add"))
-    ],Op([Var("i"),IntLit(10)],"leq"))
+    For("i",IntLit(0),IntLit(10),[
+        Assignment(Var("t"),Op([Var("t"),Var("i")],"add"))
+    ])
 ]
 
 print(compile(program))

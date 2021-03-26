@@ -11,10 +11,7 @@ class Stmt:
 class Exp(Stmt):
     pass
 
-class Val(Exp):
-    pass
-
-class Addr(Val):
+class Addr(Exp):
     pass
 
 class Register(enum.Enum):
@@ -119,22 +116,18 @@ class Op(Exp):
         return self.op + " " + ", ".join(map(lambda x : x.show(), self.args))
 
 @dataclasses.dataclass
-class IntLit(Val):
+class IntLit(Exp):
     val: int
 
     def show(self,_=0):
         return str(self.val)
 
 @dataclasses.dataclass
-class StrLit(Val):
+class StrLit(Exp):
     val: str
 
 @dataclasses.dataclass
-class FloatLit(Val):
-    val: float
-
-@dataclasses.dataclass
-class ArrayLit(Val):
+class FloatLit(Exp):
     val: float
 
 @dataclasses.dataclass

@@ -6,7 +6,7 @@ program = [
     While([
         Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
         Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"neq"))
+    ],Op([Var("x"),IntLit(0)],"ne"))
 ]
 ```
 compiles to:
@@ -19,5 +19,5 @@ sub r1, r1, #1
 add r0, r0, #2
 __cmp_3:
 cmp r1, #0
-bneq __loop_2
+bne __loop_2
 ```

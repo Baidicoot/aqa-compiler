@@ -4,6 +4,14 @@ from typing import *
 
 INDENT = 2
 
+def ERROR(msg):
+    print("FATAL ERROR:",msg)
+    exit(1)
+
+@dataclasses.dataclass
+class GenCfg:
+    target: str
+
 class Stmt:
     def show(self,i: int = 0) -> str:
         return "ERROR INVALID STATEMENT"
@@ -12,6 +20,9 @@ class Exp(Stmt):
     pass
 
 class Addr(Exp):
+    pass
+
+class Lit(Addr):
     pass
 
 class Register(enum.Enum):
@@ -28,9 +39,25 @@ class Register(enum.Enum):
     R10 = 10
     R11 = 11
     R12 = 12
+    PC = 13
+    LR = 14
+    SP = 15
 
-def showRegister(r: Register) -> str:
-    return "r" + str(r)
+def generateReg(r,cfg: GenCfg) -> str:
+    if r == 13:
+        return "pc"
+    elif r == 14:
+        return "lr"
+    elif r == 15:
+        return "sp"
+    else:
+        return "r" + str(r)
+
+@dataclasses.dataclass
+class RegisterAllocationFailure(Exception):
+    failed: str
+    assigned: dict[str, Register]
+    graph: dict[str, list[str]]
 
 def shows(ls, i: int = 0) -> str:
     return "\n".join(map(lambda x : (" " * i) + x.show(i),ls))
@@ -50,14 +77,6 @@ class Constant(Stmt):
 
     def show(self,_=0):
         return "constant " + self.assigns.show() + " <- " + self.assignval.show()
-
-@dataclasses.dataclass
-class Allocate(Stmt):
-    data: list[Exp]
-    var: Addr
-
-    def show(self,_=0):
-        return self.var.show() + " <- [" + ", ".join(map(lambda x: x.show(0),self.data)) + "]"
 
 @dataclasses.dataclass
 class While(Stmt):
@@ -116,19 +135,54 @@ class Op(Exp):
         return self.op + " " + ", ".join(map(lambda x : x.show(), self.args))
 
 @dataclasses.dataclass
-class IntLit(Exp):
+class IntLit(Lit):
     val: int
 
     def show(self,_=0):
         return str(self.val)
 
 @dataclasses.dataclass
-class StrLit(Exp):
+class StrLit(Lit):
     val: str
 
+    def show(self,_=0):
+        return "\"" + self.val + "\""
+
 @dataclasses.dataclass
-class FloatLit(Exp):
+class SymbLit(Lit):
+    symb: str
+
+    def show(self,_=0):
+        return self.symb
+
+@dataclasses.dataclass
+class FloatLit(Lit):
     val: float
+
+    def show(self,_=0):
+        return str(self.val)
+
+@dataclasses.dataclass
+class ArrayLit(Lit):
+    data: list[Exp]
+
+    def show(self,_=0):
+        return "[" + ", ".join(map(lambda x: x.show(0),self.data)) + "]"
+
+@dataclasses.dataclass
+class Call(Exp):
+    func: Exp
+    args: list[Exp]
+
+    def show(self,_=0):
+        return self.func.show() + "(" + ", ".join(map(lambda x: x.show(),self.args)) + ")"
+
+@dataclasses.dataclass
+class Return(Stmt):
+    val: Exp
+
+    def show(self,_=0):
+        return "return " + self.val.show()
 
 @dataclasses.dataclass
 class Var(Addr):
@@ -146,16 +200,23 @@ class Index(Addr):
         return self.ptr.show() + "[" + self.offset.show() + "]"
 
 class Asm:
-    def generate(self) -> str:
+    def generate(self,cfg: GenCfg) -> str:
         return ""
 
 class AsmOp:
-    def generate(self) -> str:
+    def generate(self,cfg: GenCfg) -> str:
         return ""
 
 class AsmLoc:
-    def generate(self) -> str:
+    def generate(self,cfg: GenCfg) -> str:
         return ""
+
+@dataclasses.dataclass
+class LabelDec(Asm):
+    lbl: str
+
+    def generate(self,cfg: GenCfg):
+        return self.lbl + ":"
 
 @dataclasses.dataclass
 class BinOp(Asm):
@@ -164,8 +225,8 @@ class BinOp(Asm):
     r: AsmOp
     o: Register
 
-    def generate(self):
-        return self.op + " " + showRegister(self.o) + ", " + self.l.generate() + ", " + self.r.generate()
+    def generate(self,cfg: GenCfg):
+        return self.op + " " + generateReg(self.o,cfg) + ", " + self.l.generate(cfg) + ", " + self.r.generate(cfg)
 
 @dataclasses.dataclass
 class UnOp(Asm):
@@ -173,8 +234,8 @@ class UnOp(Asm):
     src: AsmOp
     dst: Register
 
-    def generate(self):
-        return self.op + " " + showRegister(self.dst) + ", " + self.src.generate()
+    def generate(self,cfg: GenCfg):
+        return self.op + " " + generateReg(self.dst,cfg) + ", " + self.src.generate(cfg)
 
 @dataclasses.dataclass
 class LdStrOp(Asm):
@@ -182,43 +243,51 @@ class LdStrOp(Asm):
     reg: Register
     loc: AsmLoc
 
-    def generate(self):
-        return self.op + " " + showRegister(self.reg) + ", " + self.loc.generate()
+    def generate(self,cfg: GenCfg):
+        return self.op + " " + generateReg(self.reg,cfg) + ", " + self.loc.generate(cfg)
 
 @dataclasses.dataclass
 class Branch(Asm):
     cond: str
     lbl: str
 
-    def generate(self):
+    def generate(self,cfg: GenCfg):
         return "b" + self.cond + " " + self.lbl
 
 @dataclasses.dataclass
-class Misc(Asm):
-    asm: str
-    
-    def generate(self):
-        return self.asm
+class MonOp(Asm):
+    op: str
+    arg: AsmOp
+
+    def generate(self,cfg: GenCfg):
+        if self.op == "ib":
+            if cfg.target == "aqa":
+                ERROR("indirect branches are unavailable in AQA assembly")
+            return "mov pc, " + self.arg.generate(cfg)
+        elif self.op == "call":
+            if cfg.target == "aqa":
+                ERROR("procedure calls are unavailable in AQA assembly")
+        return self.op + " " + self.arg.generate(cfg)
 
 @dataclasses.dataclass
 class Reg(AsmOp):
     reg: Register
 
-    def generate(self):
-        return showRegister(self.reg)
+    def generate(self,cfg: GenCfg):
+        return generateReg(self.reg,cfg)
 
 @dataclasses.dataclass
-class IntLitAsm(AsmOp):
-    val: int
+class AsmLit(AsmOp):
+    val: Lit
 
-    def generate(self):
-        return "#" + str(self.val)
+    def generate(self,cfg: GenCfg):
+        return "#" + self.val.show()
 
 @dataclasses.dataclass
 class Direct(AsmLoc):
     addr: int
     
-    def generate(self):
+    def generate(self,cfg: GenCfg):
         return str(self.addr)
 
 @dataclasses.dataclass
@@ -226,5 +295,12 @@ class Indirect(AsmLoc):
     reg: Register
     off: int
     
-    def generate(self):
-        return "[" + showRegister(self.reg) + " + " + str(self.off) + "]"
+    def generate(self,cfg: GenCfg):
+        return "[" + self.reg.generate(cfg) + " + " + str(self.off) + "]"
+
+@dataclasses.dataclass
+class LabelLoc(AsmLoc):
+    lbl: str
+
+    def generate(self,cfg: GenCfg):
+        return self.lbl

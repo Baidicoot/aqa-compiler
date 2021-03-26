@@ -18,8 +18,8 @@ DATA_START = 1024
 BOOL_NEG = {
     "leq": "gt",
     "geq": "lt",
-    "eq": "neq",
-    "neq": "eq"
+    "eq": "ne",
+    "ne": "eq"
 }
 
 BOOL_OPS = ["and","or","not","lt","gt","leq","geq","eq","ne"]
@@ -100,7 +100,7 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                                 n_cse = flattenCondJmp(Op(a,op),avoided,renames)
                                 return n_cse + [GotoCond(lbl,""),Label(avoided)]
                     return flattenCondJmp(Op([a[0],IntLit(0)],"eq"),lbl,renames)
-                case ("lt" | "gt" | "eq" | "neq"):
+                case ("lt" | "gt" | "eq" | "ne"):
                     l, r = a
                     stmts_l, lv = flattenExp(l,renames)
                     stmts_r, rv = flattenExp(r,renames)
@@ -111,9 +111,9 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                     stmts_r, rv = flattenExp(r,renames)
                     return stmts_l + stmts_r + flattenCondJmp(Op([Op([lv,rv],op)],"not"),lbl,renames)
                 case op:
-                    return flattenCondJmp(Op([exp,IntLit(0)],"neq"),lbl,renames)
+                    return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames)
         case exp:
-            return flattenCondJmp(Op([exp,IntLit(0)],"neq"),lbl,renames)
+            return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames)
 
 def flattenStmt(stmt: Stmt, renames: VarNames, data: int) -> tuple[list[Stmt],int]:
     match stmt:
@@ -331,7 +331,7 @@ program = [
     While([
         Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
         Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"neq"))
+    ],Op([Var("x"),IntLit(0)],"ne"))
 ]
 
 print(shows(program))

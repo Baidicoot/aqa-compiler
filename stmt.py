@@ -125,7 +125,7 @@ class If(Stmt):
     dflt: list[Stmt]
 
     def show(self,_=0):
-        pass
+        return str(self)
 
 @dataclasses.dataclass
 class Label(Stmt):

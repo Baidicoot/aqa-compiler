@@ -122,6 +122,7 @@ class Repeat(Stmt):
 @dataclasses.dataclass
 class If(Stmt):
     cases: list[tuple[Exp,list[Stmt]]]
+    dflt: list[Stmt]
 
     def show(self,_=0):
         pass

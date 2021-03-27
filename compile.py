@@ -218,14 +218,17 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                     Op([Var(iv),e_],"lt")),
                 renames)
             return stmts_ + stmts__ + loop
-        case If(cases=cases):
-            branches = [fresh("branch") for _ in cases]
+        case If(cases=cases,dflt=dflt):
+            branches = [fresh("elif") for _ in cases]
+            end = fresh("endif")
             sel = []
             stmts = []
             for b,(cond,s) in zip(branches,cases):
                 stmts_ = flattenCondJmp(Op([cond],"not"),b,renames)
                 stmts__ = flattenStmts(s,renames.copy())
-                stmts.extend(stmts_ + stmts__ + [Label(b)])
+                stmts.extend(stmts_ + [GotoCond(end,"")] + stmts__ + [Label(b)])
+            stmts.extend(dflt)
+            stmts.append(Label(end))
             return stmts
         case Return(v):
             tmp = fresh("tmp")

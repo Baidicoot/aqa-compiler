@@ -1,23 +1,3 @@
-current operation - no parsing, compiler internals
-```python
-program = [
-    Assignment(Var("x"),IntLit(5)),
-    Assignment(Var("y"),IntLit(0)),
-    While([
-        Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
-        Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"ne"))
-]
-```
-compiles to:
-```x86asm
-mov r1, #5
-mov r0, #0
-b __cmp_3
-__loop_2:
-sub r1, r1, #1
-add r0, r0, #2
-__cmp_3:
-cmp r1, #0
-bne __loop_2
-```
+This is a compiler for [AQA pseudocode](https://filestore.aqa.org.uk/resources/computing/AQA-8520-TG-PC.PDF) that targets both [AQA assembly](https://filestore.aqa.org.uk/resources/computing/AQA-75162-75172-ALI.PDF) and an ARM subset called [ARMLite](https://peterhigginson.co.uk/ARMlite/Programming%20reference%20manual_v1_2.pdf). The compiler can - as far as I know - currently compile the entirety of the AQA pseudocode specification. However, AQA assembly has no features for indirect jumps, rendering subroutines impractical, and so features such as `SUBROUTINE`s and `RETURN` statements are reserved for ARMLite only.
+
+The compiler is written, and tested, in Python 3.10, in a functional-esque style (an OCaml port is inevitable). Python 3.10 is still in alpha at the moment, but can be built from source. To run the compiler, execute `python3.10 compile.py [FILEPATH] [TARGET]`, where `[FILEPATH]` is the pseudocode program to compile, and `[TARGET]` is the target backend (currently `aqa` or `arm`).

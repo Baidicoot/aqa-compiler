@@ -12,6 +12,15 @@ def ERROR(msg):
 class GenCfg:
     target: str
 
+@dataclasses.dataclass
+class Function:
+    args: list[str]
+    stmts: list[Stmt]
+    name: str
+
+    def show(self,i: int = 0) -> str:
+        return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nEND"
+
 class Stmt:
     def show(self,i: int = 0) -> str:
         return "ERROR INVALID STATEMENT"
@@ -45,10 +54,16 @@ class Register(enum.Enum):
 
 def generateReg(r,cfg: GenCfg) -> str:
     if r == 13:
+        if cfg.target == "aqa":
+            ERROR("the program counter is unavailable in AQA assembly")
         return "pc"
     elif r == 14:
+        if cfg.target == "aqa":
+            ERROR("the link register is unavailable in AQA assembly")
         return "lr"
     elif r == 15:
+        if cfg.target == "aqa":
+            ERROR("the stack is unavailable in AQA assembly")
         return "sp"
     else:
         return "r" + str(r)
@@ -182,7 +197,7 @@ class Return(Stmt):
     val: Exp
 
     def show(self,_=0):
-        return "return " + self.val.show()
+        return "RETURN " + self.val.show()
 
 @dataclasses.dataclass
 class Var(Addr):
@@ -255,6 +270,19 @@ class Branch(Asm):
         return "b" + self.cond + " " + self.lbl
 
 @dataclasses.dataclass
+class NullOp(Asm):
+    op: str
+
+    def generate(self,cfg: GenCfg):
+        if self.op == "ret" and cfg.target == "aqa":
+            ERROR("the stack is unavailable in AQA assembly")
+        elif self.op == "slr":
+            return "push {lr}"
+        elif self.op == "rlr":
+            return "pop {lr}"
+        return self.op
+
+@dataclasses.dataclass
 class MonOp(Asm):
     op: str
     arg: AsmOp
@@ -267,6 +295,15 @@ class MonOp(Asm):
         elif self.op == "call":
             if cfg.target == "aqa":
                 ERROR("procedure calls are unavailable in AQA assembly")
+            return "mov lr, pc\nmov pc, " + self.arg.generate(cfg)
+        elif self.op == "pop" or self.op == "push":
+            if cfg.target == "aqa":
+                ERROR("the stack is unavailable in AQA assembly")
+            return self.op + " {" + self.arg.generate(cfg) + "}"
+        elif self.op == "drop":
+            if cfg.target == "aqa":
+                ERROR("the stack is unavailable in AQA assembly")
+            return "add sp, sp, #" + str(4 * self.arg.val.val)
         return self.op + " " + self.arg.generate(cfg)
 
 @dataclasses.dataclass
@@ -296,7 +333,16 @@ class Indirect(AsmLoc):
     off: int
     
     def generate(self,cfg: GenCfg):
-        return "[" + self.reg.generate(cfg) + " + " + str(self.off) + "]"
+        return "[" + self.reg.generate(cfg) + " + " + str(self.off*4) + "]"
+
+@dataclasses.dataclass
+class Local(AsmLoc):
+    off: int
+
+    def generate(self,cfg: GenCfg):
+        if cfg.target == "aqa":
+            ERROR("the stack is unavailable in AQA assembly")
+        return "[sp + " + str(self.off*4) + "]"
 
 @dataclasses.dataclass
 class LabelLoc(AsmLoc):

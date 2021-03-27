@@ -81,6 +81,7 @@ def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[St
             return (stmts + stmts_ + [Assignment(Var(tmp),Index(v_,v))],Var(tmp))
         case Call(f,args):
             stmts, f_ = flattenExp(f,renames)
+            stmts.append(Op([],"slr"))
             for a in reversed(args[4:]):
                 stmt, val = flattenExp(a,renames)
                 stmts.extend(stmt)
@@ -103,6 +104,7 @@ def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[St
             stmts.append(Assignment(Var(tmp),Var(ret)))
             if len(args) > 4:
                 stmts.append(Op([IntLit(len(args) - 4)],"drop"))
+            stmts.append(Op([],"rlr"))
             return (stmts,Var(tmp))
         case lit:
             if outvar:
@@ -225,6 +227,11 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                 stmts__ = flattenStmts(s,renames.copy())
                 stmts.extend(stmts_ + stmts__ + [Label(b)])
             return stmts
+        case Return(v):
+            tmp = fresh("tmp")
+            stmts,v_ = flattenExp(v,renames,outvar=tmp)
+            stmts.append(Return(v_))
+            return stmts
         case Exp():
             return flattenExp(stmt,renames)[0]
         case stmt:
@@ -281,6 +288,9 @@ def lifetimes(stmts: list[Stmt], d: dict[str,tuple[int,int]] = {}, c: dict[str,R
                     for n,(s,e) in d.items():
                         if s <= l[lbl] <= e:
                             d[n] = (s,i)
+            case Return(Var(v)):
+                c[v] = 0
+                d[n] = (d[n][0],i)
             case Exp():
                 lifetimesExp(s,i,d,c)
     return (d,c)
@@ -296,9 +306,9 @@ def interference(d: dict[str,tuple[int,int]]) -> dict[str, list[str]]:
                 i[v].append(v_)
     return i
 
-def colorAlloc(stmts: list[Stmt]) -> tuple[list[Stmt],dict[str,Register]]:
+def colorAlloc(stmts: list[Stmt], forced: dict[str,Register]={}) -> tuple[list[Stmt],dict[str,Register]]:
     while True:
-        inf,a = lifetimes(stmts)
+        inf,a = lifetimes(stmts,c=forced)
         inf = interference(inf)
         rm,f = [],True
         lft = [x for x in list(inf) if x not in a]
@@ -340,6 +350,8 @@ def generateAssign(lhs: Addr, rhs: Exp, regs: dict[str,Register],) -> [Asm]:
                 case Op(args=a,op=op):
                     if op == "pop":
                         return [MonOp("pop",[Reg(regs[lhs])])]
+                    elif op == "local":
+                        return [LdStrOp("ldr",regs[lhs],Local(a[0].val))]
                     elif len(a) == 2:
                         l, r = a
                         o = regs[lhs]
@@ -372,6 +384,8 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register]) -> [Asm]:
                 out.extend([Branch(c,l)])
             case Label(l):
                 out.append(LabelDec(l))
+            case Return():
+                out.append(NullOp("ret"))
             case Op(args,op):
                 if op == "cmp":
                     l,r = args
@@ -381,7 +395,33 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register]) -> [Asm]:
                     out.append(MonOp("push",generateAsmOp(a,regs)))
                 elif op == "drop":
                     out.append(MonOp("drop",AsmLit(args[0])))
+                elif op == "slr" or op == "rlr":
+                    out.append(NullOp(op))
     return out
+
+def compileFunc(f: Function) -> [Asm]:
+    renames = {}
+    forced = {}
+    stmts = [Label(f.name)]
+    for i,a in enumerate(f.args):
+        renames[a] = fresh("arg_" + a)
+        if i < 4:
+            forced[renames[a]] = i
+        else:
+            stmts.append(Assignment(Var(a),Op([IntLit(i-4)],"local")))
+    stmts = stmts + f.stmts
+    flt = flattenStmts(stmts,renames)
+    flt,regs = colorAlloc(flt,forced)
+    return generateAsm(flt,regs)
+
+def compileProgram(entry: str, decls: list[Function]) -> [Asm]:
+    asm = []
+    for f in decls:
+        if f.name == entry:
+            asm = compileFunc(f) + [NullOp("hlt")] + asm
+        else:
+            asm.extend(compileFunc(f))
+    return asm
 
 def dispAsm(asm: [Asm]) -> str:
     out = ""
@@ -389,20 +429,29 @@ def dispAsm(asm: [Asm]) -> str:
         out += a.generate(GenCfg("arm")) + "\n"
     return out
 
-def compile(prg: list[Stmt]) -> str:
-    flt = flattenStmts(prg,{})
+def compile(prg: list[Stmt],args: list[str] = []) -> str:
+    renames = {}
+    for a in args:
+        renames[a] = fresh("arg_" + a)
+    flt = flattenStmts(prg,renames)
     flt,regs = colorAlloc(flt)
     return dispAsm(generateAsm(flt,regs))
 
 program = [
-    Assignment(Var("x"),IntLit(5)),
-    Assignment(Var("y"),IntLit(0)),
-    While([
-        Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
-        Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-    ],Op([Var("x"),IntLit(0)],"ne"))
+    Function(["a","b","c","d","x","y"],[
+        While([
+            Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
+            Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
+        ],Op([Var("x"),IntLit(0)],"ne")),
+        Return(Var("y"))
+    ],"addDouble"),
+    Function([],[
+        Assignment(Var("x"),IntLit(5)),
+        Assignment(Var("y"),IntLit(2)),
+        Assignment(Var("z"),Call(SymbLit("addDouble"),[IntLit(0),IntLit(0),IntLit(0),IntLit(0),Var("x"),Var("y")]))
+    ],"main")
 ]
 
 print(shows(program))
 print("\ncompiles to:\n")
-print(compile(program))
+print(dispAsm(compileProgram("main",program)))

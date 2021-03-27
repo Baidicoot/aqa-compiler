@@ -349,7 +349,7 @@ class Indirect(AsmLoc):
     off: int
     
     def generate(self,cfg: GenCfg):
-        return "[" + self.reg.generate(cfg) + " + " + str(self.off*4) + "]"
+        return "[" + generateReg(self.reg,cfg) + " + " + str(self.off*4) + "]"
 
 @dataclasses.dataclass
 class Local(AsmLoc):

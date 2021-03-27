@@ -263,8 +263,8 @@ def lifetimesExp(e: Exp,i: int,d: dict[str,tuple[int,int]], c: dict[str,Register
         case Var(var=n):
             d[n] = (d[n][0],i)
         case Index(a,o):
-            lifetimesExp(a,i,d)
-            lifetimesExp(o,i,d)
+            lifetimesExp(a,i,d,c)
+            lifetimesExp(o,i,d,c)
         case Call(f,a):
             for vi,v in enumerate(a):
                 c[v.var] = vi

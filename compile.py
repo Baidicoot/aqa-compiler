@@ -135,7 +135,7 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                             elif op in BOOL_NEG:
                                 return flattenCondJmp(Op(a,BOOL_NEG[op]),lbl,renames)
                             elif op in BOOL_OPS:
-                                avoided = fresh("not")
+                                avoided = fresh("B")
                                 n_cse = flattenCondJmp(Op(a,op),avoided,renames)
                                 return n_cse + [GotoCond(lbl,""),Label(avoided)]
                     return flattenCondJmp(Op([a[0],IntLit(0)],"eq"),lbl,renames)
@@ -197,13 +197,13 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
             stmts, v_ = flattenExp(e,renames,outvar=renames[v])
             return stmts
         case While(stmts=stmts,cond=cond):
-            loop_start = fresh("loop")
-            loop_cmp = fresh("cmp")
+            loop_start = fresh("L")
+            loop_cmp = fresh("C")
             stmts_ = flattenCondJmp(cond,loop_start,renames)
             stmts__ = flattenStmts(stmts,renames.copy())
             return [GotoCond(loop_cmp,""),Label(loop_start)] + stmts__ + [Label(loop_cmp)] + stmts_
         case Repeat(stmts=stmts,cond=cond):
-            loop_start = fresh("loop")
+            loop_start = fresh("L")
             stmts_ = flattenCondJmp(Op([cond],"not"),loop_start,renames)
             stmts__ = flattenStmts(stmts,renames.copy())
             return [Label(loop_start)] + stmts__ + stmts_
@@ -219,14 +219,14 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                 renames)
             return stmts_ + stmts__ + loop
         case If(cases=cases,dflt=dflt):
-            branches = [fresh("elif") for _ in cases]
-            end = fresh("endif")
+            branches = [fresh("C") for _ in cases]
+            end = fresh("B")
             sel = []
             stmts = []
             for b,(cond,s) in zip(branches,cases):
                 stmts_ = flattenCondJmp(Op([cond],"not"),b,renames)
                 stmts__ = flattenStmts(s,renames.copy())
-                stmts.extend(stmts_ + [GotoCond(end,"")] + stmts__ + [Label(b)])
+                stmts.extend(stmts_ + stmts__ + [GotoCond(end,""),Label(b)])
             stmts.extend(dflt)
             stmts.append(Label(end))
             return stmts
@@ -468,4 +468,4 @@ ENDSUBROUTINE
 print(shows(program))
 print(program)
 print("\ncompiles to:\n")
-print(dispAsm(compileProgram("main",program)))
+print(dispAsm(compileProgram("main",program2)))

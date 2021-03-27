@@ -440,6 +440,7 @@ def compile(prg: list[Stmt],args: list[str] = []) -> str:
     flt,regs = colorAlloc(flt)
     return dispAsm(generateAsm(flt,regs))
 
+"""
 program = [
     Function(["a","b","c","d","x","y"],[
         While([
@@ -453,24 +454,18 @@ program = [
         Assignment(Var("y"),IntLit(2)),
         Assignment(Var("z"),Call(SymbLit("addDouble"),[IntLit(0),IntLit(0),IntLit(0),IntLit(0),Var("x"),Var("y")]))
     ],"main")
-]
+]"""
+import parse
+program = parse.parse("""
+SUBROUTINE beeoid(a, b, c)
+    RETURN a + b * c
+ENDSUBROUTINE
+SUBROUTINE main()
+    x ← beeoid(4, 5, 6)
+ENDSUBROUTINE
+""").value
 
-program2 = [
-    Function([],[
-        Assignment(Var("x"),IntLit(0)),
-        If([
-            (Op([Var("x"),IntLit(1)],"eq"),[
-                Assignment(Var("x"),IntLit(2))
-            ]),
-            (Op([Var("x"),IntLit(3)],"eq"),[
-                Assignment(Var("x"),IntLit(4))
-            ])
-        ],[
-            Assignment(Var("x"),IntLit(5))
-        ])
-    ],"main")
-]
-
-print(shows(program2))
+print(shows(program))
+print(program)
 print("\ncompiles to:\n")
 print(dispAsm(compileProgram("main",program2)))

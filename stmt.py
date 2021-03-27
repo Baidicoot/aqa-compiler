@@ -19,11 +19,11 @@ class Function:
     name: str
 
     def show(self,i: int = 0) -> str:
-        return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nEND"
+        return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nENDSUBROUTINE"
 
 class Stmt:
     def show(self,i: int = 0) -> str:
-        return "ERROR INVALID STATEMENT"
+        raise Exception("Invalid statement generated")
 
 class Exp(Stmt):
     pass
@@ -99,7 +99,7 @@ class While(Stmt):
     cond: Exp
 
     def show(self,i=0):
-        return "WHILE " + self.cond.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "END"
+        return "WHILE " + self.cond.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "ENDWHILE"
 
 @dataclasses.dataclass
 class For(Stmt):
@@ -109,7 +109,7 @@ class For(Stmt):
     stmts: list[Stmt]
 
     def show(self,i=0):
-        return "FOR " + self.var + " <- " + self.start.show() + " TO " + self.end.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "END"
+        return "FOR " + self.var + " <- " + self.start.show() + " TO " + self.end.show() + "\n" + shows(self.stmts,i+INDENT) + "\n" + " " * i + "ENDFOR"
 
 @dataclasses.dataclass
 class Repeat(Stmt):
@@ -124,8 +124,18 @@ class If(Stmt):
     cases: list[tuple[Exp,list[Stmt]]]
     dflt: list[Stmt]
 
-    def show(self,_=0):
-        return str(self)
+    def show(self,i=0):
+        out = ""
+        for ix, case in enumerate(self.cases):
+            out += "IF " if ix == 0 else ("\n" + " " * i) + "ELSE IF "
+            out += case[0].show()
+            out += "\n"
+            out += shows(case[1], i + INDENT)
+        if self.dflt != []:
+            out += "\n" + " " * i + "ELSE\n"
+            out += shows(self.dflt, i + INDENT)
+        out += "\n" + " " * i + "ENDIF"
+        return out
 
 @dataclasses.dataclass
 class Label(Stmt):
@@ -148,7 +158,12 @@ class Op(Exp):
     op: str
 
     def show(self,_=0):
-        return self.op + " " + ", ".join(map(lambda x : x.show(), self.args))
+        if len(self.args) == 1:
+            return self.op + " " + self.args[0].show()
+        elif len(self.args) == 2:
+            return self.args[0].show() + " " + self.op + " " + self.args[1].show()
+        else:
+            raise ValueError("non-binary/unary op?")
 
 @dataclasses.dataclass
 class IntLit(Lit):

@@ -57,33 +57,43 @@ def constantFold(exp: Exp) -> Exp:
         case exp:
             return exp
 
-def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[Stmt],Val]:
+def resolveName(name: str, renames: VarNames, symb: list[str]) -> Exp:
+    if name in renames:
+        return Var(renames[name])
+    elif name in symb:
+        return SymbLit(name)
+    else:
+        ERROR("unknown identifier '" + name + "'")
+
+def flattenExp(exp: Exp, renames: VarNames, symb: list[str], outvar: str = None) -> tuple[list[Stmt],Val]:
     exp = constantFold(exp)
     match exp:
         case Var(var=v):
+            val = resolveName(v,renames,symb)
             if outvar:
-                return ([Assignment(Var(outvar),Var(renames[v]))],Var(outvar))
-            return ([],Var(renames[v]))
+                return ([Assignment(Var(outvar),val)],Var(outvar))
+            else:
+                return ([],val)
         case Op(args=a,op=o):
             stmts = []
             vals = []
             tmp = outvar if outvar else fresh("tmp")
             for a in a:
-                stmt, val = flattenExp(a,renames)
+                stmt, val = flattenExp(a,renames,symb)
                 stmts.extend(stmt)
                 vals.append(val)
             stmts.append(Assignment(Var(tmp),Op(args=vals,op=o)))
             return (stmts,Var(tmp))
         case Index(a,o):
-            stmts, v = flattenExp(o,renames)
-            stmts_, v_ = flattenExp(a,renames)
+            stmts, v = flattenExp(o,renames,symb)
+            stmts_, v_ = flattenExp(a,renames,symb)
             tmp = outvar if outvar else fresh("tmp")
             return (stmts + stmts_ + [Assignment(Var(tmp),Index(v_,v))],Var(tmp))
         case Call(f,args):
-            stmts, f_ = flattenExp(f,renames)
+            stmts, f_ = flattenExp(f,renames,symb)
             stmts.append(Op([],"slr"))
             for a in reversed(args[4:]):
-                stmt, val = flattenExp(a,renames)
+                stmt, val = flattenExp(a,renames,symb)
                 stmts.extend(stmt)
                 match val:
                     case Var(v):
@@ -95,7 +105,7 @@ def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[St
             regargs = []
             for a in args[:4]:
                 v = fresh("tmp")
-                stmt, val = flattenExp(a,renames,outvar=v)
+                stmt, val = flattenExp(a,renames,symb,outvar=v)
                 stmts.extend(stmt)
                 regargs.append(val)
             ret = fresh("tmp")
@@ -111,7 +121,7 @@ def flattenExp(exp: Exp, renames: VarNames, outvar: str = None) -> tuple[list[St
                 return ([Assignment(Var(outvar),lit)],Var(outvar))
             return ([],lit)
 
-def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
+def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames,symb: list[str]) -> list[Stmt]:
     match exp:
         case Op(args=a,op=op):
             match op:
@@ -119,49 +129,46 @@ def flattenCondJmp(exp: Exp, lbl: str, renames: VarNames) -> list[Stmt]:
                     l, r = a
                     l_true = fresh("and")
                     fail = fresh("and")
-                    l_cse = flattenCondJmp(l,l_true,renames)
-                    r_cse = flattenCondJmp(r,lbl,renames)
+                    l_cse = flattenCondJmp(l,l_true,renames,symb)
+                    r_cse = flattenCondJmp(r,lbl,renames,symb)
                     return l_cse + [GotoCond(fail,""),Label(l_true)] + r_cse + [Label(fail)]
                 case "or":
                     l, r = a
-                    l_cse = flattenCondJmp(l,lbl,renames)
-                    r_cse = flattenCondJmp(r,lbl,renames)
+                    l_cse = flattenCondJmp(l,lbl,renames,symb)
+                    r_cse = flattenCondJmp(r,lbl,renames,symb)
                     return l_cse + r_cse
                 case "not":
                     match a[0]:
                         case Op(args=a,op=op):
                             if op == "not":
-                                return flattenCondJmp(a[0],lbl,renames)
+                                return flattenCondJmp(a[0],lbl,renames,symb)
                             elif op in BOOL_NEG:
-                                return flattenCondJmp(Op(a,BOOL_NEG[op]),lbl,renames)
+                                return flattenCondJmp(Op(a,BOOL_NEG[op]),lbl,renames,symb)
                             elif op in BOOL_OPS:
                                 avoided = fresh("B")
-                                n_cse = flattenCondJmp(Op(a,op),avoided,renames)
+                                n_cse = flattenCondJmp(Op(a,op),avoided,renames,symb)
                                 return n_cse + [GotoCond(lbl,""),Label(avoided)]
-                    return flattenCondJmp(Op([a[0],IntLit(0)],"eq"),lbl,renames)
+                    return flattenCondJmp(Op([a[0],IntLit(0)],"eq"),lbl,renames,symb)
                 case ("lt" | "gt" | "eq" | "ne"):
                     l, r = a
-                    stmts_l, lv = flattenExp(l,renames)
-                    stmts_r, rv = flattenExp(r,renames)
+                    stmts_l, lv = flattenExp(l,renames,symb)
+                    stmts_r, rv = flattenExp(r,renames,symb)
                     return stmts_l + stmts_r + [Op([lv,rv],"cmp"),GotoCond(lbl,op)]
                 case ("leq" | "geq"):
-                    l, r = a
-                    stmts_l, lv = flattenExp(l,renames)
-                    stmts_r, rv = flattenExp(r,renames)
-                    return stmts_l + stmts_r + flattenCondJmp(Op([Op([lv,rv],op)],"not"),lbl,renames)
+                    return flattenCondJmp(Op([Op([a[0],a[1]],BOOL_NEG[op])],"not"),lbl,renames,symb)
                 case op:
-                    return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames)
+                    return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames,symb)
         case exp:
-            return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames)
+            return flattenCondJmp(Op([exp,IntLit(0)],"ne"),lbl,renames,symb)
 
-def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
+def flattenStmt(stmt: Stmt, renames: VarNames, symb: list[str]) -> list[Stmt]:
     match stmt:
         case Assignment(Index(a,o),e):
             stmts = []
             idx = None
             match o:
                 case IntLit(i):
-                    stmts, a_ = flattenExp(a,renames)
+                    stmts, a_ = flattenExp(a,renames,symb)
                     av = None
                     match a_:
                         case Var(v):
@@ -171,7 +178,7 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                             stmts.append(Assignment(Var(av),a_))
                     idx = Index(Var(av),IntLit(i))
                 case o:
-                    stmts, i_ = flattenExp(Op([a,o],"add"),renames)
+                    stmts, i_ = flattenExp(Op([a,o],"add"),renames,symb)
                     iv = None
                     match i_:
                         case Var(v):
@@ -180,7 +187,7 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
                             iv = fresh("tmp")
                             stmts.append(Assignment(Var(iv),i_))
                     idx = Index(Var(iv),IntLit(0))
-            stmts_, e_ = flattenExp(e,renames)
+            stmts_, e_ = flattenExp(e,renames,symb)
             stmts.extend(stmts_)
             ev = None
             match e_:
@@ -194,29 +201,29 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
         case Assignment(Var(v),e):
             if v not in renames:
                 renames[v] = fresh("user_" + v)
-            stmts, v_ = flattenExp(e,renames,outvar=renames[v])
+            stmts, v_ = flattenExp(e,renames,symb,outvar=renames[v])
             return stmts
         case While(stmts=stmts,cond=cond):
             loop_start = fresh("L")
             loop_cmp = fresh("C")
-            stmts_ = flattenCondJmp(cond,loop_start,renames)
-            stmts__ = flattenStmts(stmts,renames.copy())
+            stmts_ = flattenCondJmp(cond,loop_start,renames,symb)
+            stmts__ = flattenStmts(stmts,renames.copy(),symb)
             return [GotoCond(loop_cmp,""),Label(loop_start)] + stmts__ + [Label(loop_cmp)] + stmts_
         case Repeat(stmts=stmts,cond=cond):
             loop_start = fresh("L")
-            stmts_ = flattenCondJmp(Op([cond],"not"),loop_start,renames)
-            stmts__ = flattenStmts(stmts,renames.copy())
+            stmts_ = flattenCondJmp(Op([cond],"not"),loop_start,renames,symb)
+            stmts__ = flattenStmts(stmts,renames.copy(),symb)
             return [Label(loop_start)] + stmts__ + stmts_
         case For(var=iv,start=s,end=e,stmts=stmts):
-            stmts_,e_ = flattenExp(e,renames)
+            stmts_,e_ = flattenExp(e,renames,symb)
             match e_:
                 case Var(ev):
                     renames[ev] = ev
-            stmts__ = flattenStmt(Assignment(Var(iv),s),renames)
+            stmts__ = flattenStmt(Assignment(Var(iv),s),renames,symb)
             loop = flattenStmt(
                 While(stmts + [Assignment(Var(iv),Op([Var(iv),IntLit(1)],"add"))],
                     Op([Var(iv),e_],"lt")),
-                renames)
+                renames,symb)
             return stmts_ + stmts__ + loop
         case If(cases=cases,dflt=dflt):
             branches = [fresh("C") for _ in cases]
@@ -224,25 +231,25 @@ def flattenStmt(stmt: Stmt, renames: VarNames) -> list[Stmt]:
             sel = []
             stmts = []
             for b,(cond,s) in zip(branches,cases):
-                stmts_ = flattenCondJmp(Op([cond],"not"),b,renames)
-                stmts__ = flattenStmts(s,renames.copy())
+                stmts_ = flattenCondJmp(Op([cond],"not"),b,renames,symb)
+                stmts__ = flattenStmts(s,renames.copy(),symb)
                 stmts.extend(stmts_ + stmts__ + [GotoCond(end,""),Label(b)])
             stmts.extend(dflt)
             stmts.append(Label(end))
             return stmts
         case Return(v):
             tmp = fresh("tmp")
-            stmts,v_ = flattenExp(v,renames,outvar=tmp)
+            stmts,v_ = flattenExp(v,renames,symb,outvar=tmp)
             stmts.append(Return(v_))
             return stmts
         case Exp():
-            return flattenExp(stmt,renames)[0]
+            return flattenExp(stmt,renames,symb)[0]
         case stmt:
             return [stmt]
 
-def flattenStmts(stmts: list[Stmt],renames: VarNames) -> list[Stmt]:
+def flattenStmts(stmts: list[Stmt],renames: VarNames, symb: list[str]) -> list[Stmt]:
     stmts_ = []
-    for s in map(lambda s : flattenStmt(s,renames),stmts):
+    for s in map(lambda s : flattenStmt(s,renames,symb),stmts):
         stmts_.extend(s)
     return stmts_
 
@@ -309,9 +316,9 @@ def interference(d: dict[str,tuple[int,int]]) -> dict[str, list[str]]:
                 i[v].append(v_)
     return i
 
-def colorAlloc(stmts: list[Stmt], forced: dict[str,Register]={}) -> tuple[list[Stmt],dict[str,Register]]:
+def colorAlloc(stmts: list[Stmt], forced: dict[str,Register]={}, lf: dict[str,tuple[int,int]] = {}) -> tuple[list[Stmt],dict[str,Register]]:
     while True:
-        inf,a = lifetimes(stmts,c=forced)
+        inf,a = lifetimes(stmts,d=lf.copy(),c=forced)
         inf = interference(inf)
         rm,f = [],True
         lft = [x for x in list(inf) if x not in a]
@@ -346,15 +353,15 @@ def generateAsmOp(e: Exp, regs: dict[str,Register]) -> AsmOp:
         case Lit():
             return AsmLit(e)
 
-def generateAssign(lhs: Addr, rhs: Exp, regs: dict[str,Register],) -> [Asm]:
+def generateAssign(lhs: Addr, rhs: Exp, regs: dict[str,Register],stk: int) -> [Asm]:
     match lhs:
         case Var(lhs):
             match rhs:
                 case Op(args=a,op=op):
                     if op == "pop":
-                        return [MonOp("pop",[Reg(regs[lhs])])]
+                        return [MonOp("pop",Reg(regs[lhs]))]
                     elif op == "local":
-                        return [LdStrOp("ldr",regs[lhs],Local(a[0].val))]
+                        return [LdStrOp("ldr",regs[lhs],Local(a[0].val + stk))]
                     elif len(a) == 2:
                         l, r = a
                         o = regs[lhs]
@@ -377,18 +384,18 @@ def generateAssign(lhs: Addr, rhs: Exp, regs: dict[str,Register],) -> [Asm]:
                 case Var(rhs):
                     return [LdStrOp("str",regs[rhs],Indirect(regs[v],n))]
 
-def generateAsm(stmts: list[Stmt], regs: dict[str,Register]) -> [Asm]:
+def generateAsm(stmts: list[Stmt], regs: dict[str,Register],stk: int = 0) -> [Asm]:
     out = []
     for stmt in stmts:
         match stmt:
             case Assignment(assigns=a,assignexp=e):
-                out.extend(generateAssign(a,e,regs))
+                out.extend(generateAssign(a,e,regs,stk))
             case GotoCond(l,c):
                 out.extend([Branch(c,l)])
             case Label(l):
                 out.append(LabelDec(l))
             case Return():
-                out.append(NullOp("ret"))
+                pass # `ret` automatically appended
             case Op(args,op):
                 if op == "cmp":
                     l,r = args
@@ -402,70 +409,58 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register]) -> [Asm]:
                     out.append(NullOp(op))
     return out
 
-def compileFunc(f: Function) -> [Asm]:
-    renames = {}
-    forced = {}
-    stmts = [Label(f.name)]
+def saveRegs(stmts: list[Stmt],regs: dict[str,Register],name: str,entry: bool = False) -> list[Asm]:
+    tosave = list(set([r for r in regs.values() if r > 3 and not entry]))
+    asm = [LabelDec(name)]
+    for r in tosave:
+        asm.append(MonOp("push",Reg(r)))
+    asm.extend(generateAsm(stmts,regs,len(tosave)))
+    for r in reversed(tosave):
+        asm.append(MonOp("pop",Reg(r)))
+    asm.append(NullOp("hlt" if entry else "ret"))
+    return asm
+
+def compileFunc(f: Function,symb: list[str],entry: bool) -> list[Asm]:
+    renames,forced,lf = {},{},{}
+    stmts = []
     for i,a in enumerate(f.args):
         renames[a] = fresh("arg_" + a)
         if i < 4:
             forced[renames[a]] = i
+            lf[renames[a]] = (-1,-1)
         else:
             stmts.append(Assignment(Var(a),Op([IntLit(i-4)],"local")))
     stmts = stmts + f.stmts
-    flt = flattenStmts(stmts,renames)
-    flt,regs = colorAlloc(flt,forced)
-    return generateAsm(flt,regs)
+    flt = flattenStmts(stmts,renames,symb)
+    flt,regs = colorAlloc(flt,forced,lf)
+    return saveRegs(flt,regs,f.name,entry)
 
-def compileProgram(entry: str, decls: list[Function]) -> [Asm]:
+def compileProgram(entry: str, decls: list[Function]) -> list[Asm]:
+    symb = [f.name for f in decls]
     asm = []
     for f in decls:
         if f.name == entry:
-            asm = compileFunc(f) + [NullOp("hlt")] + asm
+            asm = compileFunc(f,symb,True) + asm
         else:
-            asm.extend(compileFunc(f))
+            asm.extend(compileFunc(f,symb,False))
     return asm
 
-def dispAsm(asm: [Asm]) -> str:
+def dispAsm(asm: [Asm],target: str) -> str:
     out = ""
     for a in asm:
-        out += a.generate(GenCfg("arm")) + "\n"
+        out += a.generate(GenCfg(target)) + "\n"
     return out
 
-def compile(prg: list[Stmt],args: list[str] = []) -> str:
-    renames = {}
-    for a in args:
-        renames[a] = fresh("arg_" + a)
-    flt = flattenStmts(prg,renames)
-    flt,regs = colorAlloc(flt)
-    return dispAsm(generateAsm(flt,regs))
-
-"""
-program = [
-    Function(["a","b","c","d","x","y"],[
-        While([
-            Assignment(Var("x"),Op([Var("x"),IntLit(1)],"sub")),
-            Assignment(Var("y"),Op([Var("y"),IntLit(2)],"add"))
-        ],Op([Var("x"),IntLit(0)],"ne")),
-        Return(Var("y"))
-    ],"addDouble"),
-    Function([],[
-        Assignment(Var("x"),IntLit(5)),
-        Assignment(Var("y"),IntLit(2)),
-        Assignment(Var("z"),Call(SymbLit("addDouble"),[IntLit(0),IntLit(0),IntLit(0),IntLit(0),Var("x"),Var("y")]))
-    ],"main")
-]"""
-import parse
-program = parse.parse("""
-SUBROUTINE beeoid(a, b, c)
-    RETURN a + b * c
-ENDSUBROUTINE
-SUBROUTINE main()
-    x ← beeoid(4, 5, 6)
-ENDSUBROUTINE
-""").value
-
-print(shows(program))
-print(program)
-print("\ncompiles to:\n")
-print(dispAsm(compileProgram("main",program2)))
+if __name__ == "__main__":
+    import sys
+    import parse
+    if len(sys.argv) == 1:
+        ERROR("please specify an input file")
+    elif len(sys.argv) == 2:
+        ERROR("please specify a target")
+    with open(sys.argv[1]) as fp:
+        source = fp.read()
+        program = parse.parse(source).value
+        entry = sys.argv[3] if len(sys.argv) > 3 else "main"
+        asm = compileProgram(entry,program)
+        print(dispAsm(asm,sys.argv[2]))

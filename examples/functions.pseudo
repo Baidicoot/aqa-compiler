@@ -1,0 +1,7 @@
+SUBROUTINE sum5(a,b,c,d,e)
+    RETURN a + b + c + d + e
+ENDSUBROUTINE
+
+SUBROUTINE main()
+    x <- sum5(1,2,3,4,5)
+ENDSUBROUTINE

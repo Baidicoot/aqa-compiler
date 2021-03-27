@@ -1,0 +1,11 @@
+SUBROUTINE sumto(x)
+    t <- 0
+    FOR i <- 1 TO x + 1
+        t <- t + i
+    ENDFOR
+    RETURN t
+ENDSUBROUTINE
+
+SUBROUTINE main()
+    x <- sumto(6)
+ENDSUBROUTINE

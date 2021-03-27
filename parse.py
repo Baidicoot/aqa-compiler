@@ -10,7 +10,11 @@ op_map = {
     "+": "add",
     "-": "sub",
     "*": "mul",
-    "%": "mod"
+    "%": "mod",
+    "≤": "leq",
+    "≥": "geq",
+    "<": "lt",
+    ">": "gt"
 }
 
 def map_expr(x):
@@ -57,7 +61,7 @@ class PseudocodeParser(TextParsers):
     FloatLit = reg("\-?[0-9]+\.[0-9]+") > compose(FloatLit, float)
     ArrayLit = "[" >> repsep(Expr, ",") << "]" > ArrayLit
     Identifier = reg("[a-zA-Z_]+[a-zA-Z_0-9]*")
-    VarUse = Identifier > SymbLit
+    VarUse = Identifier > Var
     BracketedExpr = "(" >> Expr << ")"
     UnaryOperator = lit("NOT")
     Start = FloatLit | StrLit | IntLit | ArrayLit | BracketedExpr | (UnaryOperator & Expr > map_unop_expr) | VarUse

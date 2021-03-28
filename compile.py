@@ -274,7 +274,7 @@ def lifetimesExp(e: Exp,i: int,d: dict[str,tuple[int,int]], c: dict[str,Register
                 c[blocker] = bi
                 d[blocker] = (i,i)
             if outvar:
-                d[outvar] = 0
+                c[outvar] = 0
             lifetimesExp(f,i,d,c)
 
 def lifetimes(stmts: list[Stmt], d: dict[str,tuple[int,int]] = {}, c: dict[str,Register] = {}) -> tuple[dict[str,tuple[int,int]],dict[str,Register]]:
@@ -284,14 +284,15 @@ def lifetimes(stmts: list[Stmt], d: dict[str,tuple[int,int]] = {}, c: dict[str,R
             case Label(lbl):
                 l[lbl] = i
             case Assignment(assigns=v,assignexp=e):
-                lifetimesExp(e,i,d,c)
                 match v:
                     case Var(var=n):
+                        lifetimesExp(e,i,d,c,outvar=n)
                         if n not in d:
                             d[n] = (i,i)
                         else:
                             d[n] = (d[n][0],i)
                     case v:
+                        lifetimesExp(e,i,d,c)
                         lifetimesExp(v,i,d,c)
             case GotoCond(lbl=lbl):
                 if lbl in l:
@@ -392,6 +393,7 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],name: str,entry: boo
     stk = len(tosave)
     returned = False
     for stmt in stmts:
+        print(stmt,stk)
         returned = False
         match stmt:
             case Assignment(assigns=a,assignexp=e):
@@ -407,6 +409,7 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],name: str,entry: boo
                 else:
                     if stk > 0:
                         out.append(MonOp("drop",AsmLit(IntLit(stk))))
+                        stk = 0
                     out.append(NullOp("ret"))
             case Op(args,op):
                 if op == "cmp":
@@ -419,14 +422,14 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],name: str,entry: boo
                 elif op == "drop":
                     stk -= args[0].val
                     out.append(MonOp("drop",AsmLit(args[0])))
-                elif op == "slr" or op == "rlr":
-                    stk += 1 if "slr" else -1
+                elif (op == "slr" or op == "rlr") and not entry:
+                    stk += 1 if op == "slr" else -1
                     out.append(NullOp(op))
-    if stk - len(tosave) > 0:
-        out.append(MonOp("drop",AsmLit(IntLit(stk - len(tosave)))))
-    for r in reversed(tosave):
-        out.append(MonOp("pop",Reg(r)))
     if not returned:
+        if stk - len(tosave) > 0:
+            out.append(MonOp("drop",AsmLit(IntLit(stk - len(tosave)))))
+        for r in reversed(tosave):
+            out.append(MonOp("pop",Reg(r)))
         out.append(NullOp("hlt" if entry else "ret"))
     return out
 

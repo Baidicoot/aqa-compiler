@@ -1,0 +1,12 @@
+SUBROUTINE f()
+    RETURN g()
+ENDSUBROUTINE
+
+SUBROUTINE g()
+    RETURN 9
+ENDSUBROUTINE
+
+SUBROUTINE main()
+    x <- f()
+    y <- x + 4
+ENDSUBROUTINE

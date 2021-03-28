@@ -384,9 +384,15 @@ def generateAssign(lhs: Addr, rhs: Exp, regs: dict[str,Register],stk: int) -> [A
                 case Var(rhs):
                     return [LdStrOp("str",regs[rhs],Indirect(regs[v],n))]
 
-def generateAsm(stmts: list[Stmt], regs: dict[str,Register],stk: int = 0) -> [Asm]:
-    out = []
+def generateAsm(stmts: list[Stmt], regs: dict[str,Register],name: str,entry: bool) -> [Asm]:
+    tosave = list(set([r for r in regs.values() if r > 3 and not entry]))
+    out = [LabelDec(name)]
+    for r in tosave:
+        out.append(MonOp("push",Reg(r)))
+    stk = len(tosave)
+    returned = False
     for stmt in stmts:
+        returned = False
         match stmt:
             case Assignment(assigns=a,assignexp=e):
                 out.extend(generateAssign(a,e,regs,stk))
@@ -395,7 +401,13 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],stk: int = 0) -> [As
             case Label(l):
                 out.append(LabelDec(l))
             case Return():
-                pass # `ret` automatically appended
+                returned = True
+                if entry:
+                    out.append(NullOp("hlt"))
+                else:
+                    if stk > 0:
+                        out.append(MonOp("drop",AsmLit(IntLit(stk))))
+                    out.append(NullOp("ret"))
             case Op(args,op):
                 if op == "cmp":
                     l,r = args
@@ -403,22 +415,20 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],stk: int = 0) -> [As
                 elif op == "push":
                     a = args[0]
                     out.append(MonOp("push",generateAsmOp(a,regs)))
+                    stk += 1
                 elif op == "drop":
+                    stk -= args[0].val
                     out.append(MonOp("drop",AsmLit(args[0])))
                 elif op == "slr" or op == "rlr":
+                    stk += 1 if "slr" else -1
                     out.append(NullOp(op))
-    return out
-
-def saveRegs(stmts: list[Stmt],regs: dict[str,Register],name: str,entry: bool = False) -> list[Asm]:
-    tosave = list(set([r for r in regs.values() if r > 3 and not entry]))
-    asm = [LabelDec(name)]
-    for r in tosave:
-        asm.append(MonOp("push",Reg(r)))
-    asm.extend(generateAsm(stmts,regs,len(tosave)))
+    if stk - len(tosave) > 0:
+        out.append(MonOp("drop",AsmLit(IntLit(stk - len(tosave)))))
     for r in reversed(tosave):
-        asm.append(MonOp("pop",Reg(r)))
-    asm.append(NullOp("hlt" if entry else "ret"))
-    return asm
+        out.append(MonOp("pop",Reg(r)))
+    if not returned:
+        out.append(NullOp("hlt" if entry else "ret"))
+    return out
 
 def compileFunc(f: Function,symb: list[str],entry: bool) -> list[Asm]:
     renames,forced,lf = {},{},{}
@@ -433,7 +443,7 @@ def compileFunc(f: Function,symb: list[str],entry: bool) -> list[Asm]:
     stmts = stmts + f.stmts
     flt = flattenStmts(stmts,renames,symb)
     flt,regs = colorAlloc(flt,forced,lf)
-    return saveRegs(flt,regs,f.name,entry)
+    return generateAsm(flt,regs,f.name,entry)
 
 def compileProgram(entry: str, decls: list[Function]) -> list[Asm]:
     symb = [f.name for f in decls]

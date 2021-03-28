@@ -393,7 +393,6 @@ def generateAsm(stmts: list[Stmt], regs: dict[str,Register],name: str,entry: boo
     stk = len(tosave)
     returned = False
     for stmt in stmts:
-        print(stmt,stk)
         returned = False
         match stmt:
             case Assignment(assigns=a,assignexp=e):

@@ -70,6 +70,10 @@ INT_FOLD_OPS = {
     "mod": lambda x, y : x % y,
 }
 
+# new (planned) expression simplifier (for each expression)
+# 1st pass: constant fold + constant insert + name resolution
+# 2nd pass: expression flattener
+
 def constantFold(exp: Exp) -> Exp:
     match exp:
         case Op([l,r],("add" | "sub" | "mul" | "div" | "mod")):

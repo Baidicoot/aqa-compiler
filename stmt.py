@@ -12,14 +12,34 @@ def ERROR(msg):
 class GenCfg:
     target: str
 
+class TLExp:
+    def show(self,i: int = 0) -> str:
+        pass
+
 @dataclasses.dataclass
-class Function:
+class Function(TLExp):
     args: list[str]
     stmts: list[Stmt]
     name: str
 
     def show(self,i: int = 0) -> str:
         return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nENDSUBROUTINE"
+
+@dataclasses.dataclass
+class Constant(TLExp):
+    assigns: str
+    assignval: Exp
+
+    def show(self,_=0):
+        return "constant " + self.assigns + " <- " + self.assignval.show()
+
+@dataclasses.dataclass
+class Global(TLExp):
+    assigns: str
+    assignval: Exp
+
+    def show(self,_=0):
+        return self.assigns + " <- " + self.assignval.show()
 
 class Stmt:
     def show(self,i: int = 0) -> str:
@@ -84,14 +104,6 @@ class Assignment(Stmt):
 
     def show(self,_=0):
         return self.assigns.show() + " <- " + self.assignexp.show()
-
-@dataclasses.dataclass
-class Constant(Stmt):
-    assigns: Addr
-    assignval: Exp
-
-    def show(self,_=0):
-        return "constant " + self.assigns.show() + " <- " + self.assignval.show()
 
 @dataclasses.dataclass
 class While(Stmt):

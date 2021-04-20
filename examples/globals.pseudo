@@ -1,0 +1,4 @@
+constant TEST <- [1,2,3,4]
+
+SUBROUTINE main()
+ENDSUBROUTINE

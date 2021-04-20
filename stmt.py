@@ -12,12 +12,12 @@ def ERROR(msg):
 class GenCfg:
     target: str
 
-class TLExp:
+class Stmt:
     def show(self,i: int = 0) -> str:
-        pass
+        raise Exception("Invalid statement generated")
 
 @dataclasses.dataclass
-class Function(TLExp):
+class Function(Stmt):
     args: list[str]
     stmts: list[Stmt]
     name: str
@@ -26,24 +26,12 @@ class Function(TLExp):
         return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nENDSUBROUTINE"
 
 @dataclasses.dataclass
-class Constant(TLExp):
+class Constant(Stmt):
     assigns: str
     assignval: Exp
 
     def show(self,_=0):
         return "constant " + self.assigns + " <- " + self.assignval.show()
-
-@dataclasses.dataclass
-class Global(TLExp):
-    assigns: str
-    assignval: Exp
-
-    def show(self,_=0):
-        return self.assigns + " <- " + self.assignval.show()
-
-class Stmt:
-    def show(self,i: int = 0) -> str:
-        raise Exception("Invalid statement generated")
 
 class Exp(Stmt):
     pass

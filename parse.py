@@ -75,8 +75,8 @@ class PseudocodeParser(TextParsers):
 
     AssignmentOp = lit("<-") | lit("←")
     Assignment = (Identifier > Var) & AssignmentOp & Expr > (lambda l: Assignment(l[0], l[2]))
-    IndexAssignment = ((Start & Index) > map_expr) & AssignmentOp & Expr > (lambda l : Assignment(l[0], l[2]))
-    ConstAssignment = lit("constant") & Assignment
+    IndexAssignment = ((Start & Index) > map_expr) & AssignmentOp & Expr > (lambda l: Assignment(l[0], l[2]))
+    ConstAssignment = lit("constant") & Identifier & AssignmentOp & Expr > (lambda l: Constant(l[1], l[3]))
     RepeatUntil = lit("REPEAT") & Statements & lit("UNTIL") & Expr > (lambda l: Repeat(l[1], l[3]))
     While = lit("WHILE") & Expr & Statements & lit("ENDWHILE") > (lambda l: While(l[2], l[1]))
     For = lit("FOR") & Identifier & AssignmentOp & Expr & lit("TO") & Expr & Statements & lit("ENDFOR") > (lambda l: For(l[1], l[3], l[5], l[6]))
@@ -86,7 +86,8 @@ class PseudocodeParser(TextParsers):
     Statement = Return | For | If | While | RepeatUntil | Assignment | ConstAssignment | IndexAssignment | ((Start & Call) > map_expr)
     Statements = rep(Statement)
     Subroutine = lit("SUBROUTINE") & Identifier & lit("(") & repsep(Identifier, lit(",")) & lit(")") & Statements & lit("ENDSUBROUTINE") > map_subroutine
-    Program = rep(Subroutine)
+    TopLevel = Subroutine | Assignment | ConstAssignment
+    Program = rep(TopLevel)
 
 parse = PseudocodeParser.Program.parse
 if __name__ == "__main__":

@@ -33,15 +33,15 @@ class CompilerState:
     def popframe(self):
         self.frames.pop()
     
-    def lookupVar(self,var: str) -> str | NoneType:
+    def lookupVar(self,var: str) -> str | type(None):
         for i in range(len(self.frames)-1,-1,-1):
             if var in self.frames[i]:
                 return self.frames[i][var]
         return None
     
-    def lookupConst(self,const: str) -> Lit | NoneType:
-        if var in self.consts:
-            return self.consts[var]
+    def lookupConst(self,const: str) -> Lit | type(None):
+        if const in self.consts:
+            return self.consts[const]
         return None
     
     def allocArray(self,size: int):
@@ -128,7 +128,7 @@ def constantFold_(exp: Exp) -> Exp:
         case exp:
             return exp
 
-def flattenExp(exp: Exp,state: CompilerState, static: bool = False, outvar: str = None) -> tuple[list[Stmt],Val]:
+def flattenExp(exp: Exp,state: CompilerState, static: bool = False, outvar: str = None) -> tuple[list[Stmt],Exp]:
     match exp:
         case ArrayLit(exps):
             subexps = [flattenExp(e,state,static) for e in exps]
@@ -182,7 +182,7 @@ def flattenExp(exp: Exp,state: CompilerState, static: bool = False, outvar: str 
                 return ([Assignment(Var(outvar),lit)],Var(outvar))
             return ([],lit)
 
-def flattenExp_(exp: Exp, state: CompilerState, outvar: str = None) -> tuple[list[Stmt],Val]:
+def flattenExp_(exp: Exp, state: CompilerState, outvar: str = None) -> tuple[list[Stmt],Exp]:
     exp = constantFold(exp)
     match exp:
         case Var(var=v):
@@ -238,7 +238,7 @@ def flattenExp_(exp: Exp, state: CompilerState, outvar: str = None) -> tuple[lis
                 return ([Assignment(Var(outvar),lit)],Var(outvar))
             return ([],lit)
 
-def simplifyExp(exp: Exp,state: CompilerState, static: bool = False, outvar: str = None) -> tuple[list[Stmt],Val]:
+def simplifyExp(exp: Exp,state: CompilerState, static: bool = False, outvar: str = None) -> tuple[list[Stmt],Exp]:
     exp_ = constantFold(exp,state)
     return flattenExp(exp_,state,static,outvar)
 

@@ -25,6 +25,9 @@ class Function(Stmt):
     def show(self,i: int = 0) -> str:
         return "SUBROUTINE " + self.name + "(" + ", ".join(self.args) + ")\n" + shows(self.stmts,i+INDENT) + "\nENDSUBROUTINE"
 
+class Exp(Stmt):
+    pass
+
 @dataclasses.dataclass
 class Constant(Stmt):
     assigns: str
@@ -32,9 +35,6 @@ class Constant(Stmt):
 
     def show(self,_=0):
         return "constant " + self.assigns + " <- " + self.assignval.show()
-
-class Exp(Stmt):
-    pass
 
 class Addr(Exp):
     pass
